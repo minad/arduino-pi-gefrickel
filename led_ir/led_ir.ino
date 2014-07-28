@@ -114,6 +114,18 @@ const char* command2string(int c) {
         }
 }
 
+inline unsigned int timer1() {
+        unsigned int t = TCNT1;
+        TCNT1 = 0;
+        return t;
+}
+
+inline unsigned int timer3() {
+        unsigned int t = TCNT3;
+        TCNT3 = 0;
+        return t;
+}
+
 void decode() {
         static volatile int bits = 0;
         static volatile unsigned char data[4];
@@ -128,25 +140,21 @@ void decode() {
                 REPEAT
         } state = IDLE;
 
+        unsigned int elapsed = timer1();
+
         switch (state) {
         case IDLE:
-                TCNT1 = 0;
                 state = HEAD_HIGH;
                 break;
         case HEAD_HIGH:
-                if (TCNT1 >= MS(8.9) && TCNT1 <= MS(9.1)) {
-                        TCNT1 = 0;
-                        state = HEAD_LOW;
-                } else {
-                        state = IDLE;
-                }
+                state = elapsed >= MS(8.9) && elapsed <= MS(9.1) ? HEAD_LOW : IDLE;
                 break;
         case HEAD_LOW:
-                if (TCNT1 >= MS(4.4) && TCNT1 <= MS(4.6)) {
+                if (elapsed >= MS(4.4) && elapsed <= MS(4.6)) {
                         state = DATA_HIGH;
                         bits = 0;
                         data[0] = data[1] = data[2] = data[3] = 0;
-                } else if (TCNT1 >= MS(2.15) && TCNT1 <= MS(2.35)) {
+                } else if (elapsed >= MS(2.15) && elapsed <= MS(2.35)) {
                         state = REPEAT;
                 } else {
                         state = IDLE;
@@ -157,7 +165,7 @@ void decode() {
                 command = last_command;
                 break;
         case DATA_LOW:
-                data[bits >> 3] |= TCNT1 >= MS(1.2) ? (1 << (bits & 7)) : 0;
+                data[bits >> 3] |= elapsed >= MS(1.2) ? (1 << (bits & 7)) : 0;
                 ++bits;
                 state = DATA_HIGH;
                 break;
@@ -174,7 +182,6 @@ void decode() {
                                 last_command = command;
                         }
                 } else {
-                        TCNT1 = 0;
                         state = DATA_LOW;
                 }
                 break;
@@ -224,13 +231,6 @@ void hsv2rgb(float h, float s, float v, float* rp, float* bp, float* gp) {
         *bp = v * (1 - s + s * b);
 }
 
-enum {
-        MODE_STATIC,
-        MODE_SMOOTH,
-        MODE_FLASH,
-        MODE_FADE
-};
-
 void setup() {
         Serial.begin(9600);
         pinMode(IR_PIN, INPUT);
@@ -245,39 +245,64 @@ void setup() {
         TCCR1C = 0;
         TCNT1 = 0;
         TIMSK1 = 0;
+
+        TCCR3A = 0;
+        TCCR3B = 5;
+        TCCR3C = 0;
+        TCNT3 = 0;
+        TIMSK3 = 0;
 }
 
 void loop() {
-        static int mode = MODE_STATIC, strobe_on = 0, flash = 0;
-        static float smooth_hue = 0, brightness = 1, strobe = 0, fade = 0,
-                        static_r = 0, static_g = 0, static_b = 0,
-                        fade1_r = 0, fade1_g = 0, fade1_b = 0,
-                        fade2_r = 0, fade2_g = 0, fade2_b = 0;
+        enum {
+                MODE_STATIC,
+                MODE_SMOOTH,
+                MODE_FLASH,
+                MODE_FADE
+        };
+
+        const float SMOOTH_FREQ = 0.05,
+                    FADE_FREQ = 0.1,
+                    STROBE_FREQ = 3,
+                    FLASH_FREQ = 4;
+
+        static int mode = MODE_STATIC, strobe_on = 0;
+        static float brightness = 1, time = 0, strobe = 0,
+                     a_r = 0, a_g = 0, a_b = 0,
+                     b_r = 0, b_g = 0, b_b = 0;
 
         int cmd = command;
         command = 0;
 
+        if (cmd) {
+                Serial.print("IR command: ");
+                Serial.println(command2string(cmd));
+        }
+
+        float elapsed = timer3() * (1024 / 1.6e7);
+        time += elapsed;
+
         switch (cmd) {
         case LIGHT_RED:
-                static_r = 1;
-                static_g = static_b = 0;
+                a_r = 1;
+                a_g = a_b = 0;
                 mode = MODE_STATIC;
                 break;
         case LIGHT_GREEN:
-                static_r = static_b = 0;
-                static_g = 1;
+                a_r = a_b = 0;
+                a_g = 1;
                 mode = MODE_STATIC;
                 break;
         case LIGHT_BLUE:
-                static_r = static_g = 0;
-                static_b = 1;
+                a_r = a_g = 0;
+                a_b = 1;
                 mode = MODE_STATIC;
                 break;
         case LIGHT_SMOOTH:
                 mode = MODE_SMOOTH;
                 break;
         case LIGHT_OFF:
-                static_r = static_g = static_b = 0;
+                a_r = a_g = a_b = 0;
                 mode = MODE_STATIC;
                 break;
         case LIGHT_BRIGHTER:
@@ -298,13 +323,13 @@ void loop() {
                 break;
         case LIGHT_FADE:
                 mode = MODE_FADE;
-                hsv2rgb(random(1e6)/1e6, 1, 1, &fade1_r, &fade1_g, &fade1_b);
-                hsv2rgb(random(1e6)/1e6, 1, 1, &fade2_r, &fade2_g, &fade2_b);
+                hsv2rgb(random(1e6)/1e6, 1, 1, &a_r, &a_g, &a_b);
+                hsv2rgb(random(1e6)/1e6, 1, 1, &b_r, &b_g, &b_b);
                 break;
         case 0:
                 break;
         default:
-                static_r = static_g = static_b = 1;
+                a_r = a_g = a_b = 1;
                 mode = MODE_STATIC;
                 break;
         }
@@ -312,41 +337,43 @@ void loop() {
         float r, g, b;
         switch (mode) {
         case MODE_SMOOTH:
-                hsv2rgb(smooth_hue, 1, 1, &r, &g, &b);
-                smooth_hue += 1e-5;
-                if (smooth_hue >= 1)
-                        smooth_hue = 0;
+                hsv2rgb(time * SMOOTH_FREQ, 1, 1, &r, &g, &b);
+                if (time >= 1 / SMOOTH_FREQ)
+                        time = 0;
                 break;
         case MODE_FADE:
-                fade += 1e-4;
-                if (fade >= 1) {
-                        fade1_r = fade2_r;
-                        fade1_g = fade2_g;
-                        fade1_b = fade2_b;
-                        hsv2rgb(random(1e6)/1e6, 1, 1, &fade2_r, &fade2_g, &fade2_b);
-                        fade = 0;
+                {
+                        float fade = time * FADE_FREQ;
+                        if (fade >= 1) {
+                                a_r = b_r;
+                                a_g = b_g;
+                                a_b = b_b;
+                                hsv2rgb(random(1e6)/1e6, 1, 1, &b_r, &b_g, &b_b);
+                                time = 0;
+                        }
+                        r = fade * b_r + (1 - fade) * a_r;
+                        g = fade * b_g + (1 - fade) * a_g;
+                        b = fade * b_b + (1 - fade) * a_b;
                 }
-                r = fade * fade2_r + (1 - fade) * fade1_r;
-                g = fade * fade2_g + (1 - fade) * fade1_g;
-                b = fade * fade2_b + (1 - fade) * fade1_b;
                 break;
         case MODE_FLASH:
-                if (flash % 2000 == 0)
-                        hsv2rgb(random(1e6)/1e6, 1, 1, &static_r, &static_g, &static_b);
-                ++flash;
+                if (time >= 1 / FLASH_FREQ) {
+                        hsv2rgb(random(1e6)/1e6, 1, 1, &a_r, &a_g, &a_b);
+                        time = 0;
+                }
         case MODE_STATIC:
-                r = static_r;
-                g = static_g;
-                b = static_b;
+                r = a_r;
+                g = a_g;
+                b = a_b;
                 break;
         }
 
         if (strobe_on) {
+                strobe += elapsed * STROBE_FREQ;
                 r *= strobe;
                 g *= strobe;
                 b *= strobe;
-                strobe += 0.0008;
-                if (strobe > 1)
+                if (strobe >= 1)
                         strobe = 0;
         }
 
@@ -357,7 +384,4 @@ void loop() {
         analogWrite(RED_PIN, 255 * r);
         analogWrite(GREEN_PIN, 255 * g);
         analogWrite(BLUE_PIN, 255 * b);
-
-        if (cmd)
-                Serial.println(command2string(cmd));
 }
