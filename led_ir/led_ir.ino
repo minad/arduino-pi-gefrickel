@@ -274,10 +274,10 @@ void loop() {
         int cmd = command;
         command = 0;
 
-        if (cmd) {
-                Serial.print("IR command: ");
-                Serial.println(command2string(cmd));
-        }
+        //if (cmd) {
+        //        Serial.print("IR command: ");
+        //        Serial.println(command2string(cmd));
+        //}
 
         float elapsed = timer3() * (1024 / 1.6e7);
         time += elapsed;
@@ -332,6 +332,24 @@ void loop() {
                 a_r = a_g = a_b = 1;
                 mode = MODE_STATIC;
                 break;
+        }
+
+        while (Serial.available() >= 6) {
+                char data[6];
+                for (int i = 0; i < sizeof (data); ++i)
+                        data[i] = Serial.read();
+                if (data[0] == 'r' && data[1] == 'g' && data[2] == 'b') {
+                        a_r = data[3] / 255.0;
+                        a_g = data[4] / 255.0;
+                        a_b = data[5] / 255.0;
+                        mode = MODE_STATIC;
+                } else {
+                        Serial.flush();
+                }
+                //Serial.println(a_r);
+                //Serial.println(a_g);
+                //Serial.println(a_b);
+                //Serial.println("RECEIVED");
         }
 
         float r, g, b;
