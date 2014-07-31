@@ -188,6 +188,13 @@ void decode() {
         }
 }
 
+inline void clamp(float* x, float a, float b) {
+        if (*x < a)
+                *x = a;
+        if (*x > b)
+                *x = b;
+}
+
 /*
  * hue, saturation, value/brightness
  */
@@ -196,39 +203,23 @@ void hsv2rgb(float h, float s, float v, float* rp, float* bp, float* gp) {
 
         if (h < 0 || h >= 1)
                 h = 0;
-        if (s < 0)
-                s = 0;
-        else if (s > 1)
-                s = 1;
-        if (v < 0)
-                v = 0;
-        else if (v > 1)
-                v = 1;
+        clamp(&s, 0, 1);
+        clamp(&v, 0, 1);
 
-        float x = 3 * h;
-        switch ((int)x) {
-        case 0:
-                r = 1 - x;
-                g = x;
-                b = 0;
-                break;
-        case 1:
-                x -= 1;
-                r = 0;
-                g = 1 - x;
-                b = x;
-                break;
-        case 2:
-                x -= 2;
-                r = x;
-                g = 0;
-                b = 1 - x;
-                break;
+	float c = v * s;
+	float x = c * (1 - fabs(fmod(6 * h, 2) - 1));
+        switch ((int)(6 * h)) {
+        case 0: r = c; g = x; b = 0; break;
+        case 1: r = x; g = c; b = 0; break;
+        case 2: r = 0; g = c; b = x; break;
+        case 3: r = 0; g = x; b = c; break;
+        case 4: r = x; g = 0; b = c; break;
+        case 5: r = c; g = 0; b = x; break;
         }
 
-        *rp = v * (1 - s + s * r);
-        *gp = v * (1 - s + s * g);
-        *bp = v * (1 - s + s * b);
+        *rp = r + v - c;
+        *gp = g + v - c;
+        *bp = b + v - c;
 }
 
 void setup() {
