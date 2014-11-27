@@ -188,6 +188,8 @@ void decode() {
                 }
                 break;
         }
+
+        digitalWrite(LED_PIN, state != IDLE);
 }
 
 inline void clamp(float* x, float a, float b) {
@@ -273,12 +275,11 @@ void loop() {
         int cmd = command, rep = repeated;
         command = repeated = 0;
 //Serial.println(digitalRead(IR_PIN));
-        if (cmd) {
+        /*if (cmd) {
                 Serial.print("IR command: ");
                 Serial.print(command2string(cmd));
                 Serial.println(rep ? " (repeated)" : "");
-        }
-        digitalWrite(LED_PIN, cmd);
+        }*/
 
         float elapsed = timer3() * (1024 / 1.6e7);
         time += elapsed;
@@ -374,7 +375,7 @@ void loop() {
                 break;
         case LIGHT_ON:
         case LIGHT_SMOOTH:
-                if (!rep) {
+                if (mode != MODE_SMOOTH) {
                         mode = MODE_SMOOTH;
                         time = 0;
                 }
@@ -398,7 +399,7 @@ void loop() {
                         strobe_on = !strobe_on;
                 break;
         case LIGHT_FLASH:
-                if (!rep) {
+                if (mode != MODE_FLASH) {
                         mode = MODE_FLASH;
                         a_h = random(1e6)/1e6;
                         a_s = a_v = 1;
@@ -406,17 +407,17 @@ void loop() {
                 }
                 break;
         case LIGHT_FADE:
-                if (!rep) {
-                        if (a_s < 1e-6) {
-                                mode = MODE_FADE_ALL;
-                                a_h = random(1e6)/1e6;
-                                b_h = random(1e6)/1e6;
-                                a_s = a_v = b_s = b_v = 1;
-                        } else {
+                if (mode != MODE_FADE_COLOR && mode != MODE_FADE_ALL) {
+                        if (mode == MODE_STATIC) {
                                 mode = MODE_FADE_COLOR;
                                 b_h = a_h + (random(1e6)/1e6 - 0.5) / 60;
                                 b_s = a_s;
                                 b_v = a_v;
+                        } else {
+                                mode = MODE_FADE_ALL;
+                                a_h = random(1e6)/1e6;
+                                b_h = random(1e6)/1e6;
+                                a_s = a_v = b_s = b_v = 1;
                         }
                         time = 0;
                 }
