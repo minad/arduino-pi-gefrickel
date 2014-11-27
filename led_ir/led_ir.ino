@@ -5,9 +5,9 @@
 
 enum {
         IR_PIN = 6,
-        RED_PIN = 10,
-        GREEN_PIN = 8,
-        BLUE_PIN = 9,
+        RED_PIN = 9,
+        GREEN_PIN = 10,
+        BLUE_PIN = 8,
 };
 
 #define MS(ms) ((int)((ms*16000L)/1024L))
@@ -62,6 +62,7 @@ enum {
         LIGHT_SMOOTH,
 };
 volatile int command = 0;
+volatile int repeated = 0;
 
 const char* command2string(int c) {
         switch (c) {
@@ -130,7 +131,6 @@ void decode() {
         static volatile int bits = 0;
         static volatile unsigned char data[4];
         static volatile int last_command = 0;
-
         static volatile enum {
                 IDLE,
                 HEAD_HIGH,
@@ -147,14 +147,14 @@ void decode() {
                 state = HEAD_HIGH;
                 break;
         case HEAD_HIGH:
-                state = elapsed >= MS(8.9) && elapsed <= MS(9.1) ? HEAD_LOW : IDLE;
+                state = elapsed >= MS(8.8) && elapsed <= MS(9.2) ? HEAD_LOW : IDLE;
                 break;
         case HEAD_LOW:
-                if (elapsed >= MS(4.4) && elapsed <= MS(4.6)) {
+                if (elapsed >= MS(4.3) && elapsed <= MS(4.7)) {
                         state = DATA_HIGH;
                         bits = 0;
                         data[0] = data[1] = data[2] = data[3] = 0;
-                } else if (elapsed >= MS(2.15) && elapsed <= MS(2.35)) {
+                } else if (elapsed >= MS(2.05) && elapsed <= MS(2.45)) {
                         state = REPEAT;
                 } else {
                         state = IDLE;
@@ -163,6 +163,7 @@ void decode() {
         case REPEAT:
                 state = IDLE;
                 command = last_command;
+                repeated = 1;
                 break;
         case DATA_LOW:
                 data[bits >> 3] |= elapsed >= MS(1.2) ? (1 << (bits & 7)) : 0;
@@ -201,8 +202,10 @@ inline void clamp(float* x, float a, float b) {
 void hsv2rgb(float h, float s, float v, float* rp, float* bp, float* gp) {
         float r, g, b;
 
-        if (h < 0 || h >= 1)
-                h = 0;
+        while (h < 0)
+                h += 1;
+        while (h >= 1)
+                h -= 1;
         clamp(&s, 0, 1);
         clamp(&v, 0, 1);
 
@@ -242,6 +245,8 @@ void setup() {
         TCCR3C = 0;
         TCNT3 = 0;
         TIMSK3 = 0;
+
+        Serial.println("Hello!");
 }
 
 void loop() {
@@ -249,7 +254,8 @@ void loop() {
                 MODE_STATIC,
                 MODE_SMOOTH,
                 MODE_FLASH,
-                MODE_FADE
+                MODE_FADE_ALL,
+                MODE_FADE_COLOR,
         };
 
         const float SMOOTH_FREQ = 0.05,
@@ -257,74 +263,170 @@ void loop() {
                     STROBE_FREQ = 3,
                     FLASH_FREQ = 4;
 
-        static int mode = MODE_STATIC, strobe_on = 0;
+        static int mode = MODE_SMOOTH, strobe_on = 0;
         static float brightness = 1, time = 0, strobe = 0,
-                     a_r = 0, a_g = 0, a_b = 0,
-                     b_r = 0, b_g = 0, b_b = 0;
+                     a_h = 0, a_s = 0, a_v = 0,
+                     b_h = 0, b_s = 0, b_v = 0;
 
-        int cmd = command;
-        command = 0;
-
-        //if (cmd) {
-        //        Serial.print("IR command: ");
-        //        Serial.println(command2string(cmd));
-        //}
+        int cmd = command, rep = repeated;
+        command = repeated = 0;
+//Serial.println(digitalRead(IR_PIN));
+        if (cmd) {
+                Serial.print("IR command: ");
+                Serial.print(command2string(cmd));
+                Serial.println(rep ? " (repeated)" : "");
+        }
 
         float elapsed = timer3() * (1024 / 1.6e7);
         time += elapsed;
 
         switch (cmd) {
         case LIGHT_RED:
-                a_r = 1;
-                a_g = a_b = 0;
+                a_h = a_s = a_v = 1;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_RED1:
+                a_h = -0.015;
+                a_s = 1;
+                a_v = 0.8;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_RED2:
+                a_h = -0.03;
+                a_s = 1;
+                a_v = 0.7;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_RED3:
+                a_h = -0.045;
+                a_s = 1;
+                a_v = 0.6;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_RED4:
+                a_h = -0.06;
+                a_s = 1;
+                a_v = 0.5;
                 mode = MODE_STATIC;
                 break;
         case LIGHT_GREEN:
-                a_r = a_b = 0;
-                a_g = 1;
+                a_h = 2./3;
+                a_s = 1;
+                a_v = 1;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_GREEN1:
+                a_h = 2./3 - 0.025;
+                a_s = 1;
+                a_v = 0.6;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_GREEN2:
+                a_h = 2./3 - 0.05;
+                a_s = 1;
+                a_v = 0.5;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_GREEN3:
+                a_h = 2./3 - 0.075;
+                a_s = 1;
+                a_v = 0.4;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_GREEN4:
+                a_h = 2./3 - 0.1;
+                a_s = 1;
+                a_v = 0.3;
                 mode = MODE_STATIC;
                 break;
         case LIGHT_BLUE:
-                a_r = a_g = 0;
-                a_b = 1;
+                a_h = 1./3;
+                a_s = 1;
+                a_v = 1;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_BLUE1:
+                a_h = 1./3 - 0.05;
+                a_s = 1;
+                a_v = 0.7;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_BLUE2:
+                a_h = 1./3 - 0.1;
+                a_s = 1;
+                a_v = 0.6;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_BLUE3:
+                a_h = 1./3 - 0.15;
+                a_s = 1;
+                a_v = 0.5;
+                mode = MODE_STATIC;
+                break;
+        case LIGHT_BLUE4:
+                a_h = 1./3 - 0.2;
+                a_s = 1;
+                a_v = 0.4;
                 mode = MODE_STATIC;
                 break;
         case LIGHT_SMOOTH:
-                mode = MODE_SMOOTH;
+                if (!rep) {
+                        mode = MODE_SMOOTH;
+                        time = 0;
+                }
                 break;
         case LIGHT_OFF:
-                a_r = a_g = a_b = 0;
+                a_h = a_s = a_v = 0;
                 mode = MODE_STATIC;
                 break;
         case LIGHT_BRIGHTER:
-                brightness += 0.05;
+                brightness *= 1.1;
                 if (brightness > 1)
                         brightness = 1;
                 break;
         case LIGHT_DARKER:
-                brightness -= 0.05;
-                if (brightness < 0.05)
-                        brightness = 0.05;
+                brightness /= 1.1;
+                if (brightness < 0.005)
+                        brightness = 0.005;
                 break;
         case LIGHT_STROBE:
-                strobe_on = !strobe_on;
+                if (!rep)
+                        strobe_on = !strobe_on;
                 break;
         case LIGHT_FLASH:
-                mode = MODE_FLASH;
+                if (!rep) {
+                        mode = MODE_FLASH;
+                        a_h = random(1e6)/1e6;
+                        a_s = a_v = 1;
+                        time = 0;
+                }
                 break;
         case LIGHT_FADE:
-                mode = MODE_FADE;
-                hsv2rgb(random(1e6)/1e6, 1, 1, &a_r, &a_g, &a_b);
-                hsv2rgb(random(1e6)/1e6, 1, 1, &b_r, &b_g, &b_b);
+                if (!rep) {
+                        if (a_s < 1e-6) {
+                                mode = MODE_FADE_ALL;
+                                a_h = random(1e6)/1e6;
+                                b_h = random(1e6)/1e6;
+                                a_s = a_v = b_s = b_v = 1;
+                        } else {
+                                mode = MODE_FADE_COLOR;
+                                b_h = a_h + (random(1e6)/1e6 - 0.5) / 60;
+                                b_s = a_s;
+                                b_v = a_v;
+                        }
+                        time = 0;
+                }
                 break;
         case 0:
                 break;
         default:
-                a_r = a_g = a_b = 1;
+                a_h = a_s = 0;
+                a_v = 1;
                 mode = MODE_STATIC;
                 break;
         }
 
+        /*
         while (Serial.available() >= 6) {
                 char data[6];
                 for (int i = 0; i < sizeof (data); ++i)
@@ -342,38 +444,43 @@ void loop() {
                 //Serial.println(a_b);
                 //Serial.println("RECEIVED");
         }
+        */
 
         float r, g, b;
         switch (mode) {
         case MODE_SMOOTH:
-                hsv2rgb(time * SMOOTH_FREQ, 1, 1, &r, &g, &b);
+                hsv2rgb(time * SMOOTH_FREQ, 1, brightness, &r, &g, &b);
                 if (time >= 1 / SMOOTH_FREQ)
                         time = 0;
                 break;
-        case MODE_FADE:
+        case MODE_FADE_ALL:
+        case MODE_FADE_COLOR:
                 {
                         float fade = time * FADE_FREQ;
                         if (fade >= 1) {
-                                a_r = b_r;
-                                a_g = b_g;
-                                a_b = b_b;
-                                hsv2rgb(random(1e6)/1e6, 1, 1, &b_r, &b_g, &b_b);
+                                if (mode == MODE_FADE_ALL) {
+                                        a_h = b_h;
+                                        b_h = random(1e6)/1e6;
+                                } else {
+                                        float next = a_h + (random(1e6)/1e6 - 0.5) / 60;
+                                        a_h = b_h;
+                                        b_h = next;
+                                }
                                 time = 0;
                         }
-                        r = fade * b_r + (1 - fade) * a_r;
-                        g = fade * b_g + (1 - fade) * a_g;
-                        b = fade * b_b + (1 - fade) * a_b;
+                        hsv2rgb(fade * b_h + (1 - fade) * a_h,
+                                fade * b_s + (1 - fade) * a_s,
+                                brightness * (fade * b_v + (1 - fade) * a_v), &r, &g, &b);
                 }
                 break;
         case MODE_FLASH:
                 if (time >= 1 / FLASH_FREQ) {
-                        hsv2rgb(random(1e6)/1e6, 1, 1, &a_r, &a_g, &a_b);
+                        a_h = random(1e6)/1e6;
+                        a_s = a_v = 1;
                         time = 0;
                 }
         case MODE_STATIC:
-                r = a_r;
-                g = a_g;
-                b = a_b;
+                hsv2rgb(a_h, a_s, brightness * a_v, &r, &g, &b);
                 break;
         }
 
@@ -385,10 +492,6 @@ void loop() {
                 if (strobe >= 1)
                         strobe = 0;
         }
-
-        r *= brightness;
-        g *= brightness;
-        b *= brightness;
 
         analogWrite(RED_PIN, 255 * r);
         analogWrite(GREEN_PIN, 255 * g);
