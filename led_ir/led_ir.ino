@@ -61,6 +61,11 @@ enum {
         LIGHT_GREEN4,
         LIGHT_BLUE4,
         LIGHT_SMOOTH,
+        TEUFEL_OFFSET = 3000,
+        TEUFEL_MUTE = TEUFEL_OFFSET + 28,
+        TEUFEL_CHANNEL = TEUFEL_OFFSET + 20,
+        TEUFEL_MINUS = TEUFEL_OFFSET + 23,
+        TEUFEL_PLUS = TEUFEL_OFFSET + 19,
 };
 volatile int command = 0;
 volatile int repeated = 0;
@@ -112,6 +117,10 @@ const char* command2string(int c) {
         case LIGHT_GREEN4: return "LIGHT_GREEN4";
         case LIGHT_BLUE4: return "LIGHT_BLUE4";
         case LIGHT_SMOOTH: return "LIGHT_SMOOTH";
+        case TEUFEL_MUTE: return "TEUFEL_MUTE";
+        case TEUFEL_CHANNEL: return "TEUFEL_CHANNEL";
+        case TEUFEL_PLUS: return "TEUFEL_PLUS";
+        case TEUFEL_MINUS: return "TEUFEL_MINUS";
         default: return "UNKNOWN";
         }
 }
@@ -177,6 +186,8 @@ void decode() {
                         if (data[2] == 0xFF ^ data[3]) {
                                 if (data[0] == 0 && data[1] == 0xFF)
                                         command = MUSIC_OFFSET + data[2];
+                                else if (data[0] == 128 && data[1] == 127)
+                                        command = TEUFEL_OFFSET + data[2];
                                 else if (data[0] == 0 && data[1] == 239)
                                         command = LIGHT_OFFSET + data[2];
                                 else
@@ -274,13 +285,13 @@ void loop() {
 
         int cmd = command, rep = repeated;
         command = repeated = 0;
-//Serial.println(digitalRead(IR_PIN));
-        /*if (cmd) {
+        /*
+        if (cmd) {
                 Serial.print("IR command: ");
                 Serial.print(command2string(cmd));
                 Serial.println(rep ? " (repeated)" : "");
-        }*/
-
+        }
+        */
         float elapsed = timer3() * (1024 / 1.6e7);
         time += elapsed;
 
@@ -422,9 +433,7 @@ void loop() {
                         time = 0;
                 }
                 break;
-        case 0:
-                break;
-        default:
+        case LIGHT_WHITE:
                 a_h = a_s = 0;
                 a_v = 1;
                 mode = MODE_STATIC;
