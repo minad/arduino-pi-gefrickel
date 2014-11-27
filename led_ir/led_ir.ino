@@ -8,6 +8,7 @@ enum {
         RED_PIN = 9,
         GREEN_PIN = 10,
         BLUE_PIN = 8,
+        LED_PIN = 13,
 };
 
 #define MS(ms) ((int)((ms*16000L)/1024L))
@@ -233,6 +234,7 @@ void setup() {
         pinMode(RED_PIN, OUTPUT);
         pinMode(GREEN_PIN, OUTPUT);
         pinMode(BLUE_PIN, OUTPUT);
+        pinMode(LED_PIN, OUTPUT);
 
         TCCR1A = 0;
         TCCR1B = 5;
@@ -276,6 +278,7 @@ void loop() {
                 Serial.print(command2string(cmd));
                 Serial.println(rep ? " (repeated)" : "");
         }
+        digitalWrite(LED_PIN, cmd);
 
         float elapsed = timer3() * (1024 / 1.6e7);
         time += elapsed;
@@ -369,6 +372,7 @@ void loop() {
                 a_v = 0.4;
                 mode = MODE_STATIC;
                 break;
+        case LIGHT_ON:
         case LIGHT_SMOOTH:
                 if (!rep) {
                         mode = MODE_SMOOTH;
